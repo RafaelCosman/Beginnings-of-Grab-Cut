@@ -9,10 +9,8 @@ output = "output/"
 
 bboxSuffix = ".txt"
 
-def loadImageByName(name):
-    filename = data + name
-    img = cv2.imread(filename)
-    return img
+def loadImageByName(filepath):
+    return cv2.imread(filepath)
 
 def loadBBoxByName(name):    
     filename = bboxes + name + bboxSuffix
@@ -21,14 +19,27 @@ def loadBBoxByName(name):
         return map(float, f)
     
 def loadImagesAndBBoxes():
-    filenames = os.listdir(data)
-    images = map(loadImageByName, filenames)
+    x = loadImagesInFolder(data)
     
-    assert not None in images
+    images = [tup[0] for tup in x]
+    filenames = [tup[1] for tup in x]
     
-    filenames = [fname.split(".")[0] for fname in filenames]
     bboxes = map(loadBBoxByName, filenames)
     
     assert not None in bboxes
     
     return zip(images, bboxes, filenames)
+
+def loadImagesInFolder(folder):
+    filenames = os.listdir(folder)
+    images = [loadImageByName(folder + filename) for filename in filenames]
+    
+    assert not None in images
+    
+    filenames = [fname.split(".")[0] for fname in filenames]
+    
+    return zip(images, filenames)
+
+def ensure_dir(d):
+    if not os.path.exists(d):
+        os.makedirs(d)
