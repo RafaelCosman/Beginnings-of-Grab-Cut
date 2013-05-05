@@ -30,12 +30,12 @@ def calcMaskUsingMine(img, bbox):
 
     allObs = np.asarray(list(fgObs) + list(bgObs))
     print(allObs.shape)
-    
+    """
     #plt.scatter(x=allObs[::100, 2], y=allObs[::100, 0])
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     step = 10000
-    """
+    
     colorList = [0] * len(fgObs) + [1] * len(bgObs)
     colorArr = np.zeros((len(allObs), 3))
     
@@ -48,8 +48,8 @@ def calcMaskUsingMine(img, bbox):
     plt.show()   
     exit()
     """
-    #gmm = sklearn.mixture.GMM(n_components=5, covariance_type='diag', random_state=None, thresh=0.01, min_covar=0.001, n_iter=100, n_init=1, params='wmc', init_params='wmc')
-    gmm = sklearn.mixture.DPGMM(n_components=5, covariance_type='diag', random_state=None, thresh=0.01, min_covar=0.001, n_iter=1, params='wmc', init_params='wmc')
+    #gmm = sklearn.mixture.GMM(n_components=5, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=100, n_init=1, params='wmc', init_params='wmc')
+    gmm = sklearn.mixture.DPGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=1, params='wmc', init_params='wmc')
     
     gmm.fit(fgObs)
     
@@ -63,8 +63,7 @@ def calcMaskUsingMine(img, bbox):
     
     visualize(components)
     
-    print("Done")
-    exit()
+    return mask
     
 def calcMaskUsingOpenCV(img, bbox):
     mask = np.zeros(img.shape[:2],dtype='uint8')
@@ -74,7 +73,7 @@ def calcMaskUsingOpenCV(img, bbox):
     cv2.grabCut(img,mask,bbox,tmp1,tmp2,iterCount=1,mode=cv2.GC_INIT_WITH_RECT)
     return mask
 
-for img, bbox, filename in ImagesAndBBoxes:
+for img, bbox, filename in ImagesAndBBoxes[1:]:
     bbox = map(int, bbox)
     bbox = tuple(bbox)
     
