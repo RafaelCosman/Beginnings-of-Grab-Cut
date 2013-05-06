@@ -82,7 +82,7 @@ def calcMaskUsingMine(img, bbox):
     #visualize(components)
     
     #Now I need to make the graph
-    g = igraph.Graph(directed=True)
+    g = igraph.Graph(directed=False)
     
     g.add_vertices([str((y, x)) for x in range(mask.shape[1]) for y in range(mask.shape[0])])
     g.add_vertices(["source", "sink"])
@@ -97,12 +97,10 @@ def calcMaskUsingMine(img, bbox):
             pts = (str((y, x)), str((y + 1, x)))
             
             edgeList.append(pts)
-            edgeList.append(pts[::-1])
             
             print((y, x))
             capacity = binaryCostFunction(img[y, x], img[y + 1, x])
             
-            capacityList.append(capacity)
             capacityList.append(capacity)
     
     #All vertical edges
@@ -111,14 +109,13 @@ def calcMaskUsingMine(img, bbox):
             pts = (str((y, x)), str((y, x + 1)))
             
             edgeList.append(pts)
-            edgeList.append(pts[::-1])
             
             capacity = binaryCostFunction(img[y, x], img[y, x + 1])
             
             capacityList.append(capacity)
-            capacityList.append(capacity)
             
-    k = 100
+    binaryCosts = np.copy(capacityList)
+    k = max(binaryCosts)
     
     #All edges to source and sink
     for x in range(mask.shape[1]):
@@ -150,9 +147,15 @@ def calcMaskUsingMine(img, bbox):
     
     print("We have : " + str(len(edgeList)) + " edges in our graph")
     
-    igraph.plot(g, layout="fr", vertex_label=None)
+    #g["color"] = "cyan"
     
-    cuts = g.all_st_mincuts("source", "sink", capacity=capacityList)
+    igraph.plot(g.as_undirected(), layout="fr", vertex_label=None, edge_width=capacityList)
+    
+    assert len(edgeList) == len(capacityList)
+    
+    print(capacityList)
+    
+    cuts = g.as_directed().all_st_mincuts("source", "sink", capacity=capacityList + capacityList)
     
     for cut in cuts:
         print(cut)
