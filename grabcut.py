@@ -17,21 +17,21 @@ directories.ensure_dir(directories.output)
     
 def calcMaskUsingMine(img, bbox):
     print(bbox)
+    print(img.shape)
     
-    mask = np.zeros(img.shape[:2],dtype='uint8')
+    trimap = np.ones(img.shape[:2],dtype='int8')
+    trimap *= -1
     
     for x in range(bbox[0], bbox[2]):
         for y in range(bbox[1], bbox[3]):
-            mask[y, x] = 1
-            
+            trimap[y, x] = 0
+    
+    mask = np.copy(trimap)
+    mask += 1
+    
     fgObs = img[mask == 1]
-    print(fgObs.shape)
-          
     bgObs = img[mask == 0]
-    print(bgObs.shape)
-
     allObs = np.asarray(list(fgObs) + list(bgObs))
-    print(allObs.shape)
     """
     #Plot the point clouds
     #plt.scatter(x=allObs[::100, 2], y=allObs[::100, 0])
@@ -54,13 +54,13 @@ def calcMaskUsingMine(img, bbox):
     
     #Make FG Components
     #gmm = sklearn.mixture.GMM(n_components=5, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=100, n_init=1, params='wmc', init_params='wmc')
-    fgGmm = sklearn.mixture.DPGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=1, params='wmc', init_params='wmc')
-    fgGmm.fit(fgObs)
+    fgGMM = sklearn.mixture.DPGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=1, params='wmc', init_params='wmc')
+    fgGMM.fit(fgObs)
     
-    print(np.round(fgGmm.weights_, 2))
-    print(np.round(fgGmm.means_, 2))
+    print(np.round(fgGMM.weights_, 2))
+    print(np.round(fgGMM.means_, 2))
     
-    fgComponents = fgGmm.predict(np.reshape(img, (-1, 3)))
+    fgComponents = fgGMM.predict(np.reshape(img, (-1, 3)))
     print(len(fgComponents))
     print(fgComponents.shape)
     fgComponents = np.reshape(fgComponents, mask.shape)
@@ -68,15 +68,14 @@ def calcMaskUsingMine(img, bbox):
     
     #Make BG Components
     #gmm = sklearn.mixture.GMM(n_components=5, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=100, n_init=1, params='wmc', init_params='wmc')
-    bgGmm = sklearn.mixture.DPGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=1, params='wmc', init_params='wmc')
-    bgGmm.fit(bgObs)
+    bgGMM = sklearn.mixture.DPGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=1, params='wmc', init_params='wmc')
+    bgGMM.fit(bgObs)
     
-    print(np.round(bgGmm.weights_, 2))
-    print(np.round(bgGmm.means_, 2))
+    print(np.round(bgGMM.weights_, 2))
+    print(np.round(bgGMM.means_, 2))
     
-    bgComponents = bgGmm.predict(np.reshape(img, (-1, 3)))
+    bgComponents = bgGMM.predict(np.reshape(img, (-1, 3)))
     print(len(bgComponents))
-    print(bgComponents.shape)
     bgComponents = np.reshape(bgComponents, mask.shape)
     
     
@@ -85,37 +84,36 @@ def calcMaskUsingMine(img, bbox):
     #Now I need to make the graph
     g = igraph.Graph(directed=True)
     
-    w, h = mask.shape[:2]
-    w, h = 100, 100
-    
-    g.add_vertices([str((x, y)) for x in range(w) for y in range(h)])
+    g.add_vertices([str((y, x)) for x in range(mask.shape[1]) for y in range(mask.shape[0])])
     g.add_vertices(["source", "sink"])
 
     edgeList = []
     capacityList = []
     
     #All horisontal edges
-    for x in range(w-1):
-        for y in range(h):
-            pts = (str((x, y)), str((x + 1, y)))
+    print("shape: " + str(mask.shape))
+    for x in range(mask.shape[1]):
+        for y in range(mask.shape[0] - 1):
+            pts = (str((y, x)), str((y + 1, x)))
             
             edgeList.append(pts)
             edgeList.append(pts[::-1])
             
-            capacity = binaryCostFunction(img[x, y], img[x + 1, y])
+            print((y, x))
+            capacity = binaryCostFunction(img[y, x], img[y + 1, x])
             
             capacityList.append(capacity)
             capacityList.append(capacity)
     
     #All vertical edges
-    for x in range(w):
-        for y in range(h-1):
-            pts = (str((x, y)), str((x, y + 1)))
+    for x in range(mask.shape[1] - 1):
+        for y in range(mask.shape[0]):
+            pts = (str((y, x)), str((y, x + 1)))
             
             edgeList.append(pts)
             edgeList.append(pts[::-1])
-                
-            capacity = binaryCostFunction(img[x, y], img[x, y + 1])
+            
+            capacity = binaryCostFunction(img[y, x], img[y, x + 1])
             
             capacityList.append(capacity)
             capacityList.append(capacity)
@@ -123,27 +121,36 @@ def calcMaskUsingMine(img, bbox):
     k = 100
     
     #All edges to source and sink
-    for x in range(w):
-        for y in range(h):
-            edgeList.append(("source", str((x,y))))
-            capacityList.append(k)
+    for x in range(mask.shape[1]):
+        for y in range(mask.shape[0]):
+            tmap = trimap[y, x]
             
-            edgeList.append((str((x,y)), "sink"))
-            capacityList.append(k)
+            if tmap == -1: #Background
+                edgeList.append((str((y,x)), "sink"))
+                capacityList.append(k)
             
-    """
-    g.add_edges([( str((x, y)), str((x + 1, y)) ) for x in range(w-1) for y in range(h)])
-    g.add_edges([( str((x + 1, y)), str((x, y)) ) for x in range(w-1) for y in range(h)])
-    g.add_edges([( str((x, y)), str((x, y + 1)) ) for x in range(w) for y in range(h-1)])
-    g.add_edges([( str((x, y + 1)), str((x, y)) ) for x in range(w) for y in range(h-1)])
-    """
+            elif tmap == 1: #Foreground
+                edgeList.append(("source", str((y,x))))
+                capacityList.append(k)
+
+            elif tmap == 0: #Unknown
+                pixel = img[y, x]
+                
+                edgeList.append(("source", str((y,x))))
+                capacityList.append(fgGMM.aic([pixel]))
+                
+                edgeList.append((str((y,x)), "sink"))
+                capacityList.append(bgGMM.aic([pixel]))
+
+            else:
+                print("ERR: unexpected value " + str(tmap) + " found in trimap")
+                exit()
     
     g.add_edges(edgeList)
     
-    print(len(edgeList))
-    print(len(capacityList))
+    print("We have : " + str(len(edgeList)) + " edges in our graph")
     
-    #igraph.plot(g, layout="fr", vertex_label=None)
+    igraph.plot(g, layout="fr", vertex_label=None)
     
     cuts = g.all_st_mincuts("source", "sink", capacity=capacityList)
     
@@ -169,6 +176,10 @@ def calcMaskUsingOpenCV(img, bbox):
 for img, bbox, filename in ImagesAndBBoxes[1:]:
     bbox = map(int, bbox)
     bbox = tuple(bbox)
+    
+    step = 100
+    img = img[::step, ::step]
+    bbox = [x/step for x in bbox]
     
     #mask = calcMaskUsingOpenCV(img, bbox)
     mask = calcMaskUsingMine(img, bbox)
