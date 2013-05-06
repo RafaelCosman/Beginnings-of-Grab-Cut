@@ -28,128 +28,152 @@ def calcMaskUsingMyGrabCut(img, bbox):
     
     mask = np.copy(trimap)
     mask += 1
+    visualize(mask)
     
-    fgObs = img[mask == 1]
-    bgObs = img[mask == 0]
-    allObs = np.asarray(list(fgObs) + list(bgObs))
-    """
-    #Plot the point clouds
-    #plt.scatter(x=allObs[::100, 2], y=allObs[::100, 0])
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    step = 10000
+    for i in range(10):
+        fgObs = img[mask == 1]
+        bgObs = img[mask == 0]
+        allObs = np.asarray(list(fgObs) + list(bgObs))
+        """
+        #Plot the point clouds
+        #plt.scatter(x=allObs[::100, 2], y=allObs[::100, 0])
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        step = 10000
+        
+        colorList = [0] * len(fgObs) + [1] * len(bgObs)
+        colorArr = np.zeros((len(allObs), 3))
+        
+        colorArr[:, 0] = 255 *  np.asarray(colorList)
+        colorArr[:, 1] = 255 * (1 - np.asarray(colorList))
+        colorArr[:, 2] = 255
+        
+        ax.scatter(allObs[::step, 0], allObs[::step, 1], allObs[::step, 2], c=colorArr)
+        
+        plt.show()   
+        exit()
+        """
+        
+        #Make FG Components
+        #gmm = sklearn.mixture.GMM(n_components=5, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=100, n_init=1, params='wmc', init_params='wmc')
+        fgGMM = sklearn.mixture.VBGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=5, params='wmc', init_params='wmc')
+        #fgGMM = sklearn.mixture.DPGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=1, params='wmc', init_params='wmc')
+        fgGMM.fit(fgObs)
+        
+        print(np.round(fgGMM.weights_, 2))
+        print(np.round(fgGMM.means_, 2))
+        
+        fgComponents = fgGMM.predict(np.reshape(img, (-1, 3)))
+        print(len(fgComponents))
+        print(fgComponents.shape)
+        fgComponents = np.reshape(fgComponents, mask.shape)
+        
+        
+        #Make BG Components
+        #gmm = sklearn.mixture.GMM(n_components=5, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=100, n_init=1, params='wmc', init_params='wmc')
+        bgGMM = sklearn.mixture.VBGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=5, params='wmc', init_params='wmc')
+        #bgGMM = sklearn.mixture.DPGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=1, params='wmc', init_params='wmc')
+        bgGMM.fit(bgObs)
+        
+        print(np.round(bgGMM.weights_, 2))
+        print(np.round(bgGMM.means_, 2))
+        
+        bgComponents = bgGMM.predict(np.reshape(img, (-1, 3)))
+        print(len(bgComponents))
+        bgComponents = np.reshape(bgComponents, mask.shape)
+        
+        #Visualize the image mapped to best components of one gaussian mixture model or the other
+        #visualize(fgComponents)
+        #visualize(bgComponents)
+        
+        #Now I need to make the graph
+        g = igraph.Graph(directed=False)
+        
+        vertexList = [(y, x) for x in range(mask.shape[1]) for y in range(mask.shape[0])]
+        g.add_vertices(map(str, vertexList))
+        g.add_vertices(["source", "sink"])
     
-    colorList = [0] * len(fgObs) + [1] * len(bgObs)
-    colorArr = np.zeros((len(allObs), 3))
-    
-    colorArr[:, 0] = 255 *  np.asarray(colorList)
-    colorArr[:, 1] = 255 * (1 - np.asarray(colorList))
-    colorArr[:, 2] = 255
-    
-    ax.scatter(allObs[::step, 0], allObs[::step, 1], allObs[::step, 2], c=colorArr)
-    
-    plt.show()   
-    exit()
-    """
-    
-    #Make FG Components
-    #gmm = sklearn.mixture.GMM(n_components=5, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=100, n_init=1, params='wmc', init_params='wmc')
-    fgGMM = sklearn.mixture.VBGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=1, params='wmc', init_params='wmc')
-    #fgGMM = sklearn.mixture.DPGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=1, params='wmc', init_params='wmc')
-    fgGMM.fit(fgObs)
-    
-    print(np.round(fgGMM.weights_, 2))
-    print(np.round(fgGMM.means_, 2))
-    
-    fgComponents = fgGMM.predict(np.reshape(img, (-1, 3)))
-    print(len(fgComponents))
-    print(fgComponents.shape)
-    fgComponents = np.reshape(fgComponents, mask.shape)
-    
-    
-    #Make BG Components
-    #gmm = sklearn.mixture.GMM(n_components=5, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=100, n_init=1, params='wmc', init_params='wmc')
-    bgGMM = sklearn.mixture.VBGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=1, params='wmc', init_params='wmc')
-    #bgGMM = sklearn.mixture.DPGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=1, params='wmc', init_params='wmc')
-    bgGMM.fit(bgObs)
-    
-    print(np.round(bgGMM.weights_, 2))
-    print(np.round(bgGMM.means_, 2))
-    
-    bgComponents = bgGMM.predict(np.reshape(img, (-1, 3)))
-    print(len(bgComponents))
-    bgComponents = np.reshape(bgComponents, mask.shape)
-    
-    
-    #visualize(components)
-    
-    #Now I need to make the graph
-    g = igraph.Graph(directed=False)
-    
-    g.add_vertices([str((y, x)) for x in range(mask.shape[1]) for y in range(mask.shape[0])])
-    g.add_vertices(["source", "sink"])
-
-    edgeList = []
-    capacityList = []
-    
-    #All horisontal edges
-    print("shape: " + str(mask.shape))
-    for x in range(mask.shape[1]):
-        for y in range(mask.shape[0] - 1):
-            edgeList.append((str((y, x)), str((y + 1, x))))
-            capacityList.append(binaryCostFunction(img[y, x], img[y + 1, x]))
-    
-    #All vertical edges
-    for x in range(mask.shape[1] - 1):
-        for y in range(mask.shape[0]):
-            edgeList.append((str((y, x)), str((y, x + 1))))
-            capacityList.append(binaryCostFunction(img[y, x], img[y, x + 1]))
-            
-    k = max(capacityList)
-    print("Setting k as: " + str(k))
-    
-    #All edges to source and sink
-    for x in range(mask.shape[1]):
-        for y in range(mask.shape[0]):
-            tmap = trimap[y, x]
-            
-            if tmap == -1: #Background
-                edgeList.append((str((y,x)), "sink"))
-                capacityList.append(k)
-            
-            elif tmap == 1: #Foreground
-                edgeList.append(("source", str((y,x))))
-                capacityList.append(k)
-
-            elif tmap == 0: #Unknown
-                pixel = img[y, x]
+        edgeList = []
+        capacityList = []
+        
+        #All horisontal edges
+        print("shape: " + str(mask.shape))
+        for x in range(mask.shape[1]):
+            for y in range(mask.shape[0] - 1):
+                edgeList.append((str((y, x)), str((y + 1, x))))
+                capacityList.append(binaryCostFunction(img[y, x], img[y + 1, x]))
+        
+        #All vertical edges
+        for x in range(mask.shape[1] - 1):
+            for y in range(mask.shape[0]):
+                edgeList.append((str((y, x)), str((y, x + 1))))
+                capacityList.append(binaryCostFunction(img[y, x], img[y, x + 1]))
                 
-                edgeList.append(("source", str((y,x))))
-                capacityList.append(unaryCostFunction(fgGMM, pixel))
+        k = max(capacityList)
+        print("Setting k as: " + str(k))
+        
+        #All edges to source and sink
+        for x in range(mask.shape[1]):
+            for y in range(mask.shape[0]):
+                tmap = trimap[y, x]
                 
-                edgeList.append((str((y,x)), "sink"))
-                capacityList.append(unaryCostFunction(bgGMM, pixel))
-
-            else:
-                print("ERR: unexpected value " + str(tmap) + " found in trimap")
-                exit()
+                if tmap == -1: #Background
+                    edgeList.append((str((y,x)), "sink"))
+                    capacityList.append(k)
+                
+                elif tmap == 1: #Foreground
+                    edgeList.append(("source", str((y,x))))
+                    capacityList.append(k)
     
-    g.add_edges(edgeList)
+                elif tmap == 0: #Unknown
+                    pixel = img[y, x]
+                    
+                    fgFit = 1/fgGMM.aic(np.asarray([pixel]))
+                    bgFit = 1/bgGMM.aic(np.asarray([pixel]))
+                    """
+                    print(fgFit),
+                    print(bgFit)                
+                    """
+                    assert 0 < fgFit < 1
+                    assert 0 < bgFit < 1
+                    
+                    edgeList.append(("source", str((y,x))))
+                    capacityList.append(fgFit)
+                    
+                    edgeList.append((str((y,x)), "sink"))
+                    capacityList.append(bgFit)
     
-    print("We have : " + str(len(edgeList)) + " edges in our graph")
-    
-    #g["color"] = "cyan"
-    
-    igraph.plot(g.as_undirected(), layout="fr", vertex_label=None, edge_width=[2 * cap for cap in capacityList])
-    
-    assert len(edgeList) == len(capacityList)
-    
-    cuts = g.as_directed().all_st_mincuts("source", "sink", capacity=capacityList + capacityList)
-    
-    for cut in cuts:
+                else:
+                    print("ERR: unexpected value " + str(tmap) + " found in trimap")
+                    exit()
+        
+        g.add_edges(edgeList)
+        
+        print("We have : " + str(len(edgeList)) + " edges in our graph")
+        
+        #igraph.plot(g.as_undirected(), layout="fr", vertex_label=None, edge_width=[2 * cap for cap in capacityList])
+        
+        assert len(edgeList) == len(capacityList)
+        
+        cuts = g.as_directed().all_st_mincuts("source", "sink", capacity=capacityList + capacityList)
+        
+        assert len(cuts) == 1
+        
+        cut = cuts[0]
+        
         print(cut)
-    
-    exit()
+        
+        for vertexIndex in cut[0]:
+            if vertexIndex < len(vertexList):
+                tup = vertexList[vertexIndex]
+                mask[tup] = 1
+                
+        for vertexIndex in cut[1]:
+            if vertexIndex < len(vertexList):
+                tup = vertexList[vertexIndex]
+                mask[tup] = 0
+                
+        visualize(mask)
     
     return mask
 
@@ -171,11 +195,11 @@ def calcMaskUsingOpenCVGrabCut(img, bbox):
     cv2.grabCut(img,mask,bbox,tmp1,tmp2,iterCount=1,mode=cv2.GC_INIT_WITH_RECT)
     return mask
 
-for img, bbox, filename in ImagesAndBBoxes[1:]:
+for img, bbox, filename in ImagesAndBBoxes:
     bbox = map(int, bbox)
     bbox = tuple(bbox)
     
-    step = 100
+    step = 10
     img = img[::step, ::step]
     bbox = [x/step for x in bbox]
     
