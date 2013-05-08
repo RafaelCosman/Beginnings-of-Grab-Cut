@@ -51,13 +51,13 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
         exit()
         """
         
-        numComponents = 10
+        numComponents = 50
         
         print("Making GMM...")
         
         if len(fgObs) >= numComponents:
             #Make FG Components
-            fgGMM = sklearn.mixture.DPGMM(n_components=numComponents, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=None, n_iter=10, params='wmc', init_params='wmc')
+            fgGMM = sklearn.mixture.DPGMM(n_components=numComponents, alpha=.01, covariance_type='full', random_state=None, thresh=0.001, min_covar=None, n_iter=10, params='wmc', init_params='wmc')
             fgGMM.fit(fgObs)
             
             fgComponents = fgGMM.predict(np.reshape(img, (-1, 3)))
@@ -65,16 +65,17 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
             
         if len(bgObs) >= numComponents:
             #Make BG Components
-            bgGMM = sklearn.mixture.DPGMM(n_components=numComponents, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=10, params='wmc', init_params='wmc')    
+            bgGMM = sklearn.mixture.DPGMM(n_components=numComponents, alpha=.01, covariance_type='full', random_state=None, thresh=0.001, min_covar=0.001, n_iter=10, params='wmc', init_params='wmc')    
             bgGMM.fit(bgObs)
             
             bgComponents = bgGMM.predict(np.reshape(img, (-1, 3)))
             bgComponents = np.reshape(bgComponents, mask.shape)
         
+        print("We found " + str(np.max(fgComponents) + 1) + " foreground components, and " + str(np.max(bgComponents) + 1) + " background components")
         
         #Visualize the image mapped to best components of one gaussian mixture model or the other
-        #visualize(fgComponents)
-        #visualize(bgComponents)
+        directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + "fg" + ".bmp", fgComponents)
+        directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + "bg" + ".bmp", bgComponents)
         
         #Now I need to make the graph
         g = igraph.Graph(directed=False)
@@ -86,36 +87,22 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
         edgeList = []
         capacityList = []
         
-        penaltyForCuttingSameComponent = 100
+        penaltyForCuttingSameComponent = 10
         
         #All horisontal edges
-        print("Creating horisontal edges...")
-        for x in range(mask.shape[1]):
-            for y in range(mask.shape[0] - 1):
-                pts = [(y, x), (y + 1, x)]
-                edgeList.append(map(str, pts))
+        print("Creating binary edges...")
+        horisontalEdges = [[(y, x), (y + 1, x)] for x in range(mask.shape[1]) for y in range(mask.shape[0] - 1)]
+        verticalEdges = [[(y, x), (y, x + 1)] for x in range(mask.shape[1] - 1) for y in range(mask.shape[0])]
+        binaryEdges = horisontalEdges + verticalEdges
+        
+        for pts in binaryEdges:            
+            cap = binaryCostFunction(img[pts[0]], img[pts[1]])
+            
+            if bgComponents[pts[0]] == bgComponents[pts[1]] and fgComponents[pts[0]] == fgComponents[pts[1]]:
+                cap += penaltyForCuttingSameComponent
                 
-                if False:#bgComponents[pts[0]] == bgComponents[pts[1]] and fgComponents[pts[0]] == fgComponents[pts[1]]:
-                    cap = penaltyForCuttingSameComponent
-                else:
-                    cap = binaryCostFunction(img[pts[0]], img[pts[1]])
-                
-                    
-                capacityList.append(cap)
-                
-        #All vertical edges        
-        print("Creating vertical edges...")
-        for x in range(mask.shape[1] - 1):
-            for y in range(mask.shape[0]):
-                pts = [(y, x), (y, x + 1)]
-                edgeList.append(map(str, pts))
-                
-                if False:#bgComponents[pts[0]] == bgComponents[pts[1]] and fgComponents[pts[0]] == fgComponents[pts[1]]:
-                    cap = penaltyForCuttingSameComponent
-                else:
-                    cap = binaryCostFunction(img[pts[0]], img[pts[1]])
-                    
-                capacityList.append(cap)
+            edgeList.append(map(str, pts))
+            capacityList.append(cap)
         
         print("Binary edges range from " + str(min(capacityList)) + " to " + str(max(capacityList)) + ", with median of " + str(np.median(capacityList)) + " and average of " + str(np.average(capacityList)))
         
@@ -126,7 +113,7 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
         fgProb = fgGMM.score(np.asarray(img).reshape(-1, 3)).reshape(mask.shape)
         bgProb = bgGMM.score(np.asarray(img).reshape(-1, 3)).reshape(mask.shape)
         
-        bias = -.0 #This is the bias towards the foreground (+) or backgrond (-)
+        bias = -.5 #This is the bias towards the foreground (+) or backgrond (-)
         unaryTerm = fgProb - bgProb + bias
 
         k = max(capacityList)
@@ -134,6 +121,8 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
 
         unaryTerm[trimap == -1] = -k
         unaryTerm[trimap == 1] = k
+        
+        directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + "unaryTerm" + ".bmp", unaryTerm)
         
         #visualize(unaryTerm)
         
@@ -178,13 +167,14 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
                 mask[tup] = 0
                 
         #visualize(mask)
-        directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + ".bmp", mask)
+        directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + "z" + ".bmp", mask)
     
     return mask
 
 def binaryCostFunction(c1, c2):
-    beta = .0001
-    binaryEdgeWeight = 50
+    beta = 0#1/(2.0 * 10**2)
+    binaryEdgeWeight = .0
+    
     return binaryEdgeWeight * math.exp(-beta * sum([x**2 for x in c1 - c2]))
 
 def unaryCostFunction(gmm, pixel):

@@ -50,7 +50,6 @@ def saveArrayAsImage(path, arr):
     arr = np.copy(arr)
     
     arr -= np.min(arr)
-    arr /= np.max(arr)
-    arr *= 255
+    arr *= 255/np.max(arr)
     
-    cv2.cv.SaveImage(path, cv2.cv.fromarray(arr))            
+    cv2.cv.SaveImage(path, cv2.cv.fromarray(np.asarray(arr,dtype="int")))            
