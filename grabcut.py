@@ -15,8 +15,8 @@ from visualization import *
 ImagesAndBBoxes = directories.loadImagesAndBBoxes()
 directories.ensure_dir(directories.output)
 
-def calcMaskUsingMyGrabCut(img, bbox):
-    trimap = np.ones(img.shape[:2],dtype='int8')
+def calcMaskUsingMyGrabCut(img, bbox, filename):
+    trimap = np.ones(img.shape[:2])
     trimap *= -1
     
     for x in range(bbox[0], bbox[2]):
@@ -27,7 +27,7 @@ def calcMaskUsingMyGrabCut(img, bbox):
     mask += 1
     #visualize(mask)
     
-    for i in range(10):
+    for iteration in range(10):
         fgObs = img[mask == 1]
         bgObs = img[mask == 0]
         allObs = np.asarray(list(fgObs) + list(bgObs))
@@ -51,26 +51,25 @@ def calcMaskUsingMyGrabCut(img, bbox):
         exit()
         """
         
+        numComponents = 10
+        
         print("Making GMM...")
         
-        #Make FG Components
-        #fgGMM = sklearn.mixture.GMM(n_components=5, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=100, n_init=1, params='wmc', init_params='wmc')
-        #fgGMM = sklearn.mixture.VBGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=5, params='wmc', init_params='wmc')
-        fgGMM = sklearn.mixture.DPGMM(n_components=10, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=None, n_iter=1, params='wmc', init_params='wmc')
-        fgGMM.fit(fgObs)
-        
-        fgComponents = fgGMM.predict(np.reshape(img, (-1, 3)))
-        fgComponents = np.reshape(fgComponents, mask.shape)
-        
-        
-        #Make BG Components
-        #gmm = sklearn.mixture.GMM(n_components=5, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=100, n_init=1, params='wmc', init_params='wmc')
-        #bgGMM = sklearn.mixture.VBGMM(n_components=5, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=5, params='wmc', init_params='wmc')
-        bgGMM = sklearn.mixture.DPGMM(n_components=10, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=1, params='wmc', init_params='wmc')
-        bgGMM.fit(bgObs)
-        
-        bgComponents = bgGMM.predict(np.reshape(img, (-1, 3)))
-        bgComponents = np.reshape(bgComponents, mask.shape)
+        if len(fgObs) >= numComponents:
+            #Make FG Components
+            fgGMM = sklearn.mixture.DPGMM(n_components=numComponents, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=None, n_iter=10, params='wmc', init_params='wmc')
+            fgGMM.fit(fgObs)
+            
+            fgComponents = fgGMM.predict(np.reshape(img, (-1, 3)))
+            fgComponents = np.reshape(fgComponents, mask.shape)
+            
+        if len(bgObs) >= numComponents:
+            #Make BG Components
+            bgGMM = sklearn.mixture.DPGMM(n_components=numComponents, alpha=.001, covariance_type='full', random_state=None, thresh=0.01, min_covar=0.001, n_iter=10, params='wmc', init_params='wmc')    
+            bgGMM.fit(bgObs)
+            
+            bgComponents = bgGMM.predict(np.reshape(img, (-1, 3)))
+            bgComponents = np.reshape(bgComponents, mask.shape)
         
         
         #Visualize the image mapped to best components of one gaussian mixture model or the other
@@ -87,22 +86,38 @@ def calcMaskUsingMyGrabCut(img, bbox):
         edgeList = []
         capacityList = []
         
+        penaltyForCuttingSameComponent = 100
+        
         #All horisontal edges
         print("Creating horisontal edges...")
         for x in range(mask.shape[1]):
             for y in range(mask.shape[0] - 1):
-                edgeList.append((str((y, x)), str((y + 1, x))))
-                capacityList.append(binaryCostFunction(img[y, x], img[y + 1, x]))
+                pts = [(y, x), (y + 1, x)]
+                edgeList.append(map(str, pts))
+                
+                if False:#bgComponents[pts[0]] == bgComponents[pts[1]] and fgComponents[pts[0]] == fgComponents[pts[1]]:
+                    cap = penaltyForCuttingSameComponent
+                else:
+                    cap = binaryCostFunction(img[pts[0]], img[pts[1]])
+                
+                    
+                capacityList.append(cap)
                 
         #All vertical edges        
         print("Creating vertical edges...")
         for x in range(mask.shape[1] - 1):
             for y in range(mask.shape[0]):
-                edgeList.append((str((y, x)), str((y, x + 1))))
-                capacityList.append(binaryCostFunction(img[y, x], img[y, x + 1]))
+                pts = [(y, x), (y, x + 1)]
+                edgeList.append(map(str, pts))
                 
-        k = max(capacityList)
-        print("Setting k as: " + str(k))
+                if False:#bgComponents[pts[0]] == bgComponents[pts[1]] and fgComponents[pts[0]] == fgComponents[pts[1]]:
+                    cap = penaltyForCuttingSameComponent
+                else:
+                    cap = binaryCostFunction(img[pts[0]], img[pts[1]])
+                    
+                capacityList.append(cap)
+        
+        print("Binary edges range from " + str(min(capacityList)) + " to " + str(max(capacityList)) + ", with median of " + str(np.median(capacityList)) + " and average of " + str(np.average(capacityList)))
         
         #All edges to source and sink
         print("Creating edges to source and sink (unary term)...")
@@ -111,8 +126,12 @@ def calcMaskUsingMyGrabCut(img, bbox):
         fgProb = fgGMM.score(np.asarray(img).reshape(-1, 3)).reshape(mask.shape)
         bgProb = bgGMM.score(np.asarray(img).reshape(-1, 3)).reshape(mask.shape)
         
-        unaryTerm = fgProb - bgProb
-        
+        bias = -.0 #This is the bias towards the foreground (+) or backgrond (-)
+        unaryTerm = fgProb - bgProb + bias
+
+        k = max(capacityList)
+        print("Setting k as: " + str(k))        
+
         unaryTerm[trimap == -1] = -k
         unaryTerm[trimap == 1] = k
         
@@ -129,11 +148,9 @@ def calcMaskUsingMyGrabCut(img, bbox):
                     edgeList.append((str((y,x)), "sink"))
                     capacityList.append(-uterm)
         
-        print("Edge lists have been constructed")        
-        
+        print("Edge lists have been constructed")     
+        print("We have : " + str(len(edgeList)) + " edges in our graph")        
         g.add_edges(edgeList)
-        
-        print("We have : " + str(len(edgeList)) + " edges in our graph")
         
         #igraph.plot(g.as_undirected(), layout="fr", vertex_label=None, edge_width=[2 * cap for cap in capacityList])
         
@@ -141,7 +158,10 @@ def calcMaskUsingMyGrabCut(img, bbox):
         
         cuts = g.as_directed().all_st_mincuts("source", "sink", capacity=capacityList + capacityList)
         
-        assert len(cuts) == 1, "%r cuts were found" % len(cuts)
+        if len(cuts) == 0:
+            print("No cuts found! Continuing onto the next iteration anyway....")
+            continue
+        #assert len(cuts) == 1, "%r cuts were found" % len(cuts)
         
         cut = cuts[0]
         
@@ -157,13 +177,15 @@ def calcMaskUsingMyGrabCut(img, bbox):
                 tup = vertexList[vertexIndex]
                 mask[tup] = 0
                 
-        visualize(mask)
+        #visualize(mask)
+        directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + ".bmp", mask)
     
     return mask
 
 def binaryCostFunction(c1, c2):
     beta = .0001
-    return 1 + 10000 * math.exp(-beta * sum([x**2 for x in c1 - c2]))
+    binaryEdgeWeight = 50
+    return binaryEdgeWeight * math.exp(-beta * sum([x**2 for x in c1 - c2]))
 
 def unaryCostFunction(gmm, pixel):
     prob = gmm.bic(np.asarray([pixel]))
@@ -187,16 +209,15 @@ def main():
         bbox = tuple(bbox)
         
         step = 10
-        img = img[::step, ::step]
+        img = sp.misc.imresize(img, float(1)/step)
         bbox = [x/step for x in bbox]
         
         #mask = calcMaskUsingOpenCVGrabCut(img, bbox)
-        mask = calcMaskUsingMyGrabCut(img, bbox)
+        mask = calcMaskUsingMyGrabCut(img, bbox, filename)
     
         #result = cv2.Image(mask)
-        mask *= float(255)/4
         print("Finished one image.")
-        cv2.cv.SaveImage(directories.output + filename + ".bmp", cv2.cv.fromarray(mask))
+        directories.saveArrayAsImage(directories.output + filename + ".bmp", mask)
         
     print("GrabCut is finished :D")
     

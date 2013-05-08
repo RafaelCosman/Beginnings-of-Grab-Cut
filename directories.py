@@ -1,11 +1,13 @@
 import cv2
 import sys
 import os
+import numpy as np
 
 data = "data_GT/"
 bboxes = "ICCV09_new_bounding_boxes/"
 groundTruth = "seg_GT/"
 output = "output/"
+test = "test/"
 
 bboxSuffix = ".txt"
 
@@ -43,3 +45,12 @@ def loadImagesInFolder(folder):
 def ensure_dir(d):
     if not os.path.exists(d):
         os.makedirs(d)
+        
+def saveArrayAsImage(path, arr):
+    arr = np.copy(arr)
+    
+    arr -= np.min(arr)
+    arr /= np.max(arr)
+    arr *= 255
+    
+    cv2.cv.SaveImage(path, cv2.cv.fromarray(arr))            
