@@ -15,9 +15,11 @@ from visualization import *
 ImagesAndBBoxes = directories.loadImagesAndBBoxes()
 directories.ensure_dir(directories.output)
 
-def calcMaskUsingMyGrabCut(img, bbox, filename):
+def calcMaskUsingMyGrabCut(img, bbox, filename):    
     trimap = np.ones(img.shape[:2])
     trimap *= -1
+    
+    pmask = np.zeros(trimap.shape)
     
     for x in range(bbox[0], bbox[2]):
         for y in range(bbox[1], bbox[3]):
@@ -25,9 +27,16 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
     
     mask = np.copy(trimap)
     mask += 1
-    #visualize(mask)
     
-    for iteration in range(10):
+    iteration = 0
+    while differenceBetweenTwoMasks(pmask, mask) > .005:
+        print(differenceBetweenTwoMasks(pmask, mask))
+        
+        pmask = np.copy(mask)
+        
+        
+        print("Beginning " + filename + " on iteration " + str(iteration))
+        
         fgObs = img[mask == 1]
         bgObs = img[mask == 0]
         allObs = np.asarray(img).reshape(-1, 3)
@@ -145,11 +154,12 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
             #if allComponents[pts[0]] == allComponents[pts[1]]:
             #    cap += penaltyForCuttingSameComponent
             
-            beta = 1/(2.0 * 100**2)
+            beta = 1/(2.0 * 30**2)
             binaryEdgeWeight = 2
-                
-            #cap = binaryEdgeWeight * (.01 + math.exp(-beta * sum([x**2 for x in img[pts[0]] - img[pts[1]]])))
-            cap = .1 + binaryEdgeWeight * (edges[pts[0]] * edges[pts[1]])
+            
+            cap = 10 * math.exp(-beta * sum([x**2 for x in img[pts[0]] - img[pts[1]]]))
+            cap = edges[pts[0]] * edges[pts[1]]
+            cap *= binaryEdgeWeight
             
             assert cap >= 0
             
@@ -182,10 +192,11 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
         #All edges to source and sink
         print("Creating edges to source and sink (unary term)...")
         
-        bias = 0 #This is the bias towards the foreground (+) or backgrond (-)
-        unaryTerm = fgProb - bgProb + bias
-        unaryTerm -= np.median(unaryTerm)
-        unaryTerm += bias
+        #bias = 0 #This is the bias towards the foreground (+) or backgrond (-)
+        unaryTerm = fgProb - bgProb
+        #I need some kind of normalization
+        unaryTerm -= np.median(unaryTerm) * .5 #This is the strength of the normalization
+        #unaryTerm += bias
         
         print("Unary edges range from " + str(np.min(unaryTerm)) + " to " + str(np.max(unaryTerm)) + ", with median of " + str(np.median(unaryTerm)) + " and average of " + str(np.average(unaryTerm)))
 
@@ -230,19 +241,27 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
         
         for vertexIndex in cut[0]:
             if vertexIndex < len(vertexList):
-                tup = vertexList[vertexIndex]
-                mask[tup] = 1
+                pt = vertexList[vertexIndex]
+                mask[pt] = 1
                 
         for vertexIndex in cut[1]:
             if vertexIndex < len(vertexList):
-                tup = vertexList[vertexIndex]
-                mask[tup] = 0
+                pt = vertexList[vertexIndex]
+                mask[pt] = 0
                 
         #visualize(mask)
         directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + "z" + ".bmp", mask)
         print("")
-    
+        
+        iteration += 1
+        
+    print(differenceBetweenTwoMasks(pmask, mask))    
     return mask
+
+def differenceBetweenTwoMasks(m1, m2):
+    assert m1.size == m2.size
+    
+    return np.sum(np.abs(m1 - m2))/float(m1.size)
 
 def binaryCostFunction(c1, c2):
     beta = 0#1/(2.0 * 10**2)
