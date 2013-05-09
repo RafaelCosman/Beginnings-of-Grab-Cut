@@ -52,4 +52,13 @@ def saveArrayAsImage(path, arr):
     arr -= np.min(arr)
     arr *= 255/np.max(arr)
     
-    cv2.cv.SaveImage(path, cv2.cv.fromarray(np.asarray(arr,dtype="int")))            
+    cv2.cv.SaveImage(path, cv2.cv.fromarray(np.asarray(arr,dtype="int")))
+    
+def clearFolder(folder):
+    for the_file in os.listdir(folder):
+        file_path = os.path.join(folder, the_file)
+        try:
+            if os.path.isfile(file_path):
+                os.unlink(file_path)
+        except Exception, e:
+            print e    

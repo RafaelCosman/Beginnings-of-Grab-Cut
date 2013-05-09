@@ -15,7 +15,9 @@ from visualization import *
 ImagesAndBBoxes = directories.loadImagesAndBBoxes()
 directories.ensure_dir(directories.output)
 
-def calcMaskUsingMyGrabCut(img, bbox, filename):    
+def calcMaskUsingMyGrabCut(img, bbox, filename):
+    directories.clearFolder(directories.test)
+    
     trimap = np.ones(img.shape[:2])
     trimap *= -1
     
@@ -27,6 +29,15 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
     
     mask = np.copy(trimap)
     mask += 1
+    
+
+    print("Creating binary edges...")
+    verticalEdges = [[(y, x), (y + 1, x)] for x in range(mask.shape[1]) for y in range(mask.shape[0] - 1)]
+    horisontalEdges = [[(y, x), (y, x + 1)] for x in range(mask.shape[1] - 1) for y in range(mask.shape[0])]
+    de = [[(y, x), (y + 1, x + 1)] for x in range(mask.shape[1] - 1) for y in range(mask.shape[0] - 1)]
+    de2 = [[(y, x), (y + 1, x - 1)] for x in range(1, mask.shape[1]) for y in range(mask.shape[0] - 1)]
+    binaryEdges = horisontalEdges + verticalEdges + de + de2    
+
     
     iteration = 0
     while differenceBetweenTwoMasks(pmask, mask) > .005:
@@ -138,13 +149,6 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
         directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + "hedges" + ".bmp", bgProb)
         
         
-        #All horisontal edges
-        print("Creating binary edges...")
-        verticalEdges = [[(y, x), (y + 1, x)] for x in range(mask.shape[1]) for y in range(mask.shape[0] - 1)]
-        horisontalEdges = [[(y, x), (y, x + 1)] for x in range(mask.shape[1] - 1) for y in range(mask.shape[0])]
-        de = [[(y, x), (y + 1, x + 1)] for x in range(mask.shape[1] - 1) for y in range(mask.shape[0] - 1)]
-        de2 = [[(y, x), (y + 1, x - 1)] for x in range(1, mask.shape[1]) for y in range(mask.shape[0] - 1)]
-        binaryEdges = horisontalEdges + verticalEdges + de + de2
         
         penaltyForCuttingSameComponent = 10
         for pts in binaryEdges:
@@ -157,8 +161,9 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
             beta = 1/(2.0 * 30**2)
             binaryEdgeWeight = 2
             
-            cap = 10 * math.exp(-beta * sum([x**2 for x in img[pts[0]] - img[pts[1]]]))
-            cap = edges[pts[0]] * edges[pts[1]]
+            cap = 0
+            cap += 10 * math.exp(-beta * sum([x**2 for x in img[pts[0]] - img[pts[1]]]))
+            cap += edges[pts[0]] * edges[pts[1]]
             cap *= binaryEdgeWeight
             
             assert cap >= 0
