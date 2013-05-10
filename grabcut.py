@@ -15,36 +15,44 @@ from visualization import *
 ImagesAndBBoxes = directories.loadImagesAndBBoxes()
 directories.ensure_dir(directories.output)
 
-def minCuts(shape, edges, capacities):
+def minCuts(vertices, edges, capacities):
+	assert len(edges) == len(capacities)
+	assert min(capacities) >= 0
+	
 	#Now I need to make the graph
 	g = igraph.Graph(directed=False)
 
-	vertexList = [(y, x) for x in range(shape[1]) for y in range(shape[0])]
-	g.add_vertices(map(str, vertexList))
-	g.add_vertices(["source", "sink"])		
+	g.add_vertices(map(str, vertices))
+	g.add_vertices(["source", "sink"])
+	
 	g.add_edges(edges)
 
 	#igraph.plot(g.as_undirected(), layout="fr", vertex_label=None, edge_width=[2 * cap for cap in capacityList])
 
-	#assert len(edgeList) == len(capacityList)
-
 	return g.as_directed().all_st_mincuts("source", "sink", capacity=capacities * 2)
-	
+
+def normalizeArr(arr):
+	arr -= np.min(arr)
+	arr /= np.max(arr)
 
 def initBinaryEdges(img):
-	minEdgeStrength = 250
-	edges = cv2.Canny(img, 2*minEdgeStrength, minEdgeStrength)
-	edges = np.asarray(edges, dtype="float")
-	edges /= 255
-	edges *= -1
-	edges += 1
+	edges = np.zeros(img.shape[:2], dtype="float")
+	
+	for apertureSize in [3, 5, 7]:	
+		for minEdgeStrength in range(0, 500, 50):
+			edges += cv2.Canny(image=img, threshold1=2*minEdgeStrength, threshold2=minEdgeStrength, L2gradient=True, apertureSize=apertureSize)
+		
+		#visualize(edges)
+		
+	edges = edges ** 4
+	normalizeArr(edges)
 
 	print("Creating binary edges...")
 	verticalEdges = [[(y, x), (y + 1, x)] for x in range(img.shape[1]) for y in range(img.shape[0] - 1)]
 	horisontalEdges = [[(y, x), (y, x + 1)] for x in range(img.shape[1] - 1) for y in range(img.shape[0])]
 	de = [[(y, x), (y + 1, x + 1)] for x in range(img.shape[1] - 1) for y in range(img.shape[0] - 1)]
 	de2 = [[(y, x), (y + 1, x - 1)] for x in range(1, img.shape[1]) for y in range(img.shape[0] - 1)]
-	binaryEdges = horisontalEdges + verticalEdges + de + de2    
+	binaryEdges = horisontalEdges + verticalEdges + de + de2
 
 	binaryCapacities = []
 	for pts in binaryEdges:
@@ -55,14 +63,16 @@ def initBinaryEdges(img):
 		#    cap += penaltyForCuttingSameComponent
 
 		beta = 1/(2.0 * 30**2)
-		binaryEdgeWeight = 2
+		binaryEdgeWeight = .035
 
 		cap = 0
-		cap += .001 * math.exp(-beta * sum([x**2 for x in img[pts[0]] - img[pts[1]]]))
-		cap += edges[pts[0]] * edges[pts[1]]
+		cap += .1 * math.exp(-beta * sum([x**2 for x in img[pts[0]] - img[pts[1]]]))
+		cap += 1/(edges[pts[0]]+edges[pts[1]] + .001)
 		cap *= binaryEdgeWeight
-
+			
 		assert cap >= 0
+		assert cap is not None
+		assert not math.isnan(cap)
 
 		"""
                 dist = math.sqrt(sum([x**2 for x in img[pts[0]] - img[pts[1]]]))
@@ -104,7 +114,7 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
 	binaryEdges, binaryCapacities = initBinaryEdges(img)
 
 	iteration = 0
-	while differenceBetweenTwoMasks(pmask, mask) > .005:
+	while differenceBetweenTwoMasks(pmask, mask) > .005 or iteration < 3:
 		print(differenceBetweenTwoMasks(pmask, mask))
 
 		pmask = np.copy(mask)
@@ -191,8 +201,6 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
 
 
 
-
-
 		binaryEdgesArr = np.zeros(mask.shape)
 		for edge, cap in zip(binaryEdges, binaryCapacities):
 			binaryEdgesArr[edge[0]] += cap
@@ -201,8 +209,11 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
 		#All edges to source and sink
 		print("Creating edges to source and sink (unary term)...")
 		unaryTerm = fgProb - bgProb
-		unaryTerm -= np.median(unaryTerm) * .5 #This is the strength of the normalization
+		unaryTerm -= np.median(unaryTerm) * 1.0 #This is the strength of the normalization
 
+		print("Binary edges range from " + str(min(binaryCapacities)) + " to " + str(max(binaryCapacities)) + "\nwith median of " + str(np.median(binaryCapacities)) + " and average of " + str(np.average(binaryCapacities)))
+		print("Unary edges range from " + str(np.min(unaryTerm)) + " to " + str(np.max(unaryTerm)) + "\nwith median of " + str(np.median(unaryTerm)) + " and average of " + str(np.average(unaryTerm)))		
+		
 		directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + "unaryTerm" + ".bmp", unaryTerm)
 
 		REALLY_BIG_CAPACITY = 1000000     
@@ -222,11 +233,10 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
 					unaryEdges.append((str((y,x)), "sink"))
 					unaryCapacities.append(-uterm)
 
-
-		print("Binary edges range from " + str(min(binaryCapacities)) + " to " + str(max(binaryCapacities)) + ", with median of " + str(np.median(binaryCapacities)) + " and average of " + str(np.average(binaryCapacities)))
-		print("Unary edges range from " + str(np.min(unaryTerm)) + " to " + str(np.max(unaryTerm)) + ", with median of " + str(np.median(unaryTerm)) + " and average of " + str(np.average(unaryTerm)))
+		binaryEdgesStrings = [map(str, binaryEdge) for binaryEdge in binaryEdges]
+		vertexList = [(y, x) for x in range(mask.shape[1]) for y in range(mask.shape[0])]
+		cuts = minCuts(vertexList, binaryEdgesStrings + unaryEdges, binaryCapacities + unaryCapacities)
 		
-		cuts = minCuts(mask.shape, binaryEdges + unaryEdges, binaryCapacities + unaryCapacities)
 		if len(cuts) == 0:
 			print("No cuts found! Continuing onto the next iteration anyway....")
 			print("")
