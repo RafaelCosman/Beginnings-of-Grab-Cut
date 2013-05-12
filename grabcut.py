@@ -19,6 +19,8 @@ def minCuts(vertices, edges, capacities):
 	assert len(edges) == len(capacities)
 	assert min(capacities) >= 0
 	
+	capacities = [int(cap * 10000) for cap in capacities]
+	
 	#Now I need to make the graph
 	g = igraph.Graph(directed=False)
 
