@@ -33,10 +33,19 @@ def minCuts(vertices, edges, capacities):
 
 	return g.as_directed().all_st_mincuts("source", "sink", capacity=capacities * 2)
 
+def normalizeList(l):
+	l = np.asarray([l])
+	l = sklearn.preprocessing.normalize(l, norm='l1', axis=1, copy=True)
+	l = list(l[0])
+	return [x * 100 for x in l]
+
+def normalizeArr(arr):
+	return np.reshape(np.asarray(normalizeList(arr.flatten())), arr.shape)
+"""
 def normalizeArr(arr):
 	arr -= np.min(arr)
 	arr /= np.max(arr)
-
+"""
 def initBinaryEdges(img):
 	edges = np.zeros(img.shape[:2], dtype="float")
 	
@@ -65,12 +74,10 @@ def initBinaryEdges(img):
 		#    cap += penaltyForCuttingSameComponent
 
 		beta = 1/(2.0 * 30**2)
-		binaryEdgeWeight = .035
 
 		cap = 0
 		#cap += .1 * math.exp(-beta * sum([x**2 for x in img[pts[0]] - img[pts[1]]]))
 		cap += 1/(edges[pts[0]]+edges[pts[1]] + .001)
-		cap *= binaryEdgeWeight
 			
 		assert cap >= 0
 		assert cap is not None
@@ -94,7 +101,7 @@ def initBinaryEdges(img):
                 """ 
 		binaryCapacities.append(cap)
 
-	return binaryEdges, binaryCapacities
+	return binaryEdges, [x * 2.0 for x in normalizeList(binaryCapacities)]
 
 def initTrimapFromBBox(img, bbox):
 	trimap = np.ones(img.shape[:2])
@@ -192,13 +199,11 @@ def calcMaskUsingMyGrabCut(img, bbox, filename):
 		print("We found " + str(np.max(fgComponents) + 1) + " foreground components, and " + str(np.max(bgComponents) + 1) + " background components")
 
 		#Visualize the image mapped to best components of one gaussian mixture model or the other
-		directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + "ag" + ".bmp", allComponents)
+		agProb = normalizeArr(agProb)
 		directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + "agProb" + ".bmp", agProb)
-
-		directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + "fg" + ".bmp", fgComponents)
+		fgProb = normalizeArr(fgProb)
 		directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + "fgProb" + ".bmp", fgProb)
-
-		directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + "bg" + ".bmp", bgComponents)
+		bgProb = normalizeArr(bgProb)
 		directories.saveArrayAsImage(directories.test + filename + "-" + str(iteration) + "bgProb" + ".bmp", bgProb)
 
 
